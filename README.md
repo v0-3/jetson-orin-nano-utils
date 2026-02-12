@@ -78,12 +78,6 @@ Usage:
 python3 camera.py
 ```
 
-## Suggested order
-
-1. `sudo bash install-vscode.sh`
-2. `bash install-pytorch.sh --venv`
-3. `python3 camera.py`
-
 ## Requirements
 
 - NVIDIA Jetson Orin Nano (JetPack 6 / Ubuntu 22.04 environment expected)
