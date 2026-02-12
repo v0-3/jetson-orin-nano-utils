@@ -12,24 +12,13 @@ DEB_FILE=""
 
 require_root() {
   if [ "${EUID:-$(id -u)}" -ne 0 ]; then
-    echo "Please run this script with sudo or as root."
+    echo "Please run this script with sudo."
     exit 1
   fi
-}
-
-detect_original_user() {
-  local detected_user
-
-  if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
-    detected_user="$SUDO_USER"
-  else
-    detected_user=$(getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 {print $1}' | head -n 1)
-    if [ -z "$detected_user" ]; then
-      detected_user="nobody"
-    fi
+  if [ -z "${SUDO_USER:-}" ] || [ "$SUDO_USER" = "root" ]; then
+    echo "Please run this script via sudo from your current non-root user account."
+    exit 1
   fi
-
-  printf '%s\n' "$detected_user"
 }
 
 install_dependencies() {
@@ -84,17 +73,12 @@ install_vscode() {
 }
 
 verify_installation() {
-  local original_user="$1"
-  local run_as_user=()
+  local current_user="$1"
 
   echo "Verifying installation..."
-  if [ "$original_user" != "nobody" ] && [ "$original_user" != "root" ]; then
-    run_as_user=(sudo -u "$original_user")
-  fi
-
-  if "${run_as_user[@]}" command -v code >/dev/null 2>&1; then
+  if sudo -u "$current_user" command -v code >/dev/null 2>&1; then
     echo "VS Code version:"
-    "${run_as_user[@]}" code --version
+    sudo -u "$current_user" code --version
     echo "Visual Studio Code installed successfully!"
     return
   fi
@@ -104,18 +88,18 @@ verify_installation() {
 }
 
 main() {
-  local original_user
+  local current_user
 
   require_root
-  original_user=$(detect_original_user)
-  echo "Original user detected as: $original_user"
+  current_user="$SUDO_USER"
+  echo "Current sudo user: $current_user"
 
   trap cleanup_download EXIT
 
   install_dependencies
   download_vscode
   install_vscode
-  verify_installation "$original_user"
+  verify_installation "$current_user"
 }
 
 main "$@"
