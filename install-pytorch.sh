@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 USE_VENV=false
 CLEAN_CACHE=false
+PYTHON_CMD=(python3)
 
 for arg in "$@"; do
   case "$arg" in
@@ -32,6 +33,8 @@ done
 
 readonly WHEEL_CACHE="$HOME/.cache/pytorch_wheels"
 readonly WORKSPACE_DIR="$HOME/Workspace"
+readonly PYENV_ROOT="$HOME/.pyenv"
+readonly PYENV_VERSION="3.10.12"
 
 readonly TORCH_WHL="torch-2.5.0a0+872d972e41.nv24.08-cp310-cp310-linux_aarch64.whl"
 readonly TORCHVISION_WHL="torchvision-0.20.0a0+afc54f7-cp310-cp310-linux_aarch64.whl"
@@ -44,6 +47,14 @@ announce() {
   echo "$1"
 }
 
+run_python() {
+  "${PYTHON_CMD[@]}" "$@"
+}
+
+run_pip() {
+  run_python -m pip "$@"
+}
+
 download_if_missing() {
   local filename="$1"
   local url="$2"
@@ -53,22 +64,41 @@ download_if_missing() {
   fi
 }
 
+setup_pyenv() {
+  announce "Installing pyenv and Python ${PYENV_VERSION}..."
+
+  if [[ ! -d "$PYENV_ROOT" ]]; then
+    git clone https://github.com/pyenv/pyenv.git "$PYENV_ROOT"
+  fi
+
+  export PYENV_ROOT
+  export PATH="$PYENV_ROOT/bin:$PATH"
+
+  # shellcheck disable=SC1091
+  eval "$(pyenv init - bash)"
+
+  pyenv install -s "$PYENV_VERSION"
+  pyenv global "$PYENV_VERSION"
+  PYTHON_CMD=(pyenv exec python)
+}
+
 create_venv_if_requested() {
   if ! $USE_VENV; then
-    announce "Using system Python (no virtual environment)."
+    announce "Using pyenv Python (no virtual environment)."
     return
   fi
 
   announce "Creating virtual environment..."
   mkdir -p "$WORKSPACE_DIR"
   cd "$WORKSPACE_DIR"
-  python3 -m venv .venv
+  run_python -m venv .venv
   # shellcheck disable=SC1091
   source .venv/bin/activate
+  PYTHON_CMD=(python)
 }
 
 verify_install() {
-  python3 - <<'PYCODE'
+  run_python - <<'PYCODE'
 import torch, torchvision
 
 print('Torch:', torch.__version__)
@@ -101,7 +131,24 @@ announce "Installing PyTorch for Jetson Orin Nano"
 announce "Updating system packages..."
 
 sudo apt-get update
-sudo apt-get install -y python3-pip python3-venv libopenblas-dev wget
+sudo apt-get install -y \
+  build-essential \
+  ca-certificates \
+  git \
+  libbz2-dev \
+  libffi-dev \
+  liblzma-dev \
+  libopenblas-dev \
+  libreadline-dev \
+  libsqlite3-dev \
+  libssl-dev \
+  make \
+  tk-dev \
+  wget \
+  xz-utils \
+  zlib1g-dev
+
+setup_pyenv
 
 announce "Installing cuSPARSELt (required by torch 2.5.0)..."
 readonly CUDA_KEYRING_DEB="cuda-keyring_1.1-1_all.deb"
@@ -110,7 +157,7 @@ sudo dpkg -i "$CUDA_KEYRING_DEB"
 sudo apt-get update
 sudo apt-get -y install libcusparselt0 libcusparselt-dev
 
-python3 -m pip uninstall -y torch torchvision || true
+run_pip uninstall -y torch torchvision || true
 
 mkdir -p "$WHEEL_CACHE"
 cd "$WHEEL_CACHE"
@@ -127,13 +174,13 @@ download_if_missing "$TORCHVISION_WHL" "$TORCHVISION_URL"
 create_venv_if_requested
 
 announce "Upgrading pip..."
-python3 -m pip install --upgrade pip
+run_pip install --upgrade pip
 
 announce "Installing ONNX Runtime GPU 1.23.0..."
-python3 -m pip install "$ONNXRUNTIME_GPU_WHL_URL"
+run_pip install "$ONNXRUNTIME_GPU_WHL_URL"
 
 announce "Installing PyTorch and TorchVision..."
-python3 -m pip install --force-reinstall \
+run_pip install --force-reinstall \
   "$WHEEL_CACHE/$TORCH_WHL" \
   "$WHEEL_CACHE/$TORCHVISION_WHL" \
   "numpy<2.0"
