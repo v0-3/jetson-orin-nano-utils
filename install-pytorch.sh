@@ -168,12 +168,11 @@ setup_pyenv() {
 
 python_runtime_metadata() {
   run_python - <<'PYCODE'
-import os
 import sys
 
-print(f"executable={os.path.realpath(sys.executable)}")
-print(f"prefix={os.path.realpath(sys.prefix)}")
-print(f"base_prefix={os.path.realpath(sys.base_prefix)}")
+print(f"executable={sys.executable}")
+print(f"prefix={sys.prefix}")
+print(f"base_prefix={sys.base_prefix}")
 PYCODE
 }
 
