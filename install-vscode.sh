@@ -76,9 +76,9 @@ verify_installation() {
   local current_user="$1"
 
   echo "Verifying installation..."
-  if sudo -u "$current_user" command -v code >/dev/null 2>&1; then
+  if sudo -u "$current_user" bash -lc 'command -v code >/dev/null 2>&1'; then
     echo "VS Code version:"
-    sudo -u "$current_user" code --version
+    sudo -u "$current_user" bash -lc 'code --version'
     echo "Visual Studio Code installed successfully!"
     return
   fi
