@@ -23,6 +23,8 @@ TARGET_HOME=""
 PYENV_ROOT=""
 WHEEL_CACHE=""
 WORKSPACE_DIR=""
+EXPECTED_PYENV_PYTHON=""
+EXPECTED_VENV_PYTHON=""
 PYTHON_CMD=(python3)
 
 log_info() {
@@ -53,6 +55,7 @@ usage() {
 Usage: sudo bash ${SCRIPT_NAME} [--venv] [--clean-cache]
 
 Install Jetson-compatible PyTorch/TorchVision wheels with CUDA dependencies.
+Fails fast if runtime Python is not pyenv-managed (or a venv based on it).
 
 Options:
   --venv         Create and use TARGET_HOME/Workspace/.venv before installing
@@ -142,6 +145,8 @@ configure_target_context() {
   PYENV_ROOT="${TARGET_HOME}/.pyenv"
   WHEEL_CACHE="${TARGET_HOME}/.cache/pytorch_wheels"
   WORKSPACE_DIR="${TARGET_HOME}/Workspace"
+  EXPECTED_PYENV_PYTHON="${PYENV_ROOT}/versions/${PYENV_VERSION}/bin/python"
+  EXPECTED_VENV_PYTHON="${WORKSPACE_DIR}/.venv/bin/python"
 }
 
 setup_pyenv() {
@@ -159,6 +164,97 @@ setup_pyenv() {
     env "PYENV_ROOT=$PYENV_ROOT" "PATH=$PYENV_ROOT/bin:$PATH"
     "$PYENV_ROOT/bin/pyenv" exec python
   )
+}
+
+python_runtime_metadata() {
+  run_python - <<'PYCODE'
+import os
+import sys
+
+print(f"executable={os.path.realpath(sys.executable)}")
+print(f"prefix={os.path.realpath(sys.prefix)}")
+print(f"base_prefix={os.path.realpath(sys.base_prefix)}")
+PYCODE
+}
+
+assert_python_provenance() {
+  local pyenv_which_python=""
+  local runtime_executable=""
+  local runtime_prefix=""
+  local runtime_base_prefix=""
+  local key=""
+  local value=""
+  local expected_pyenv_prefix="${PYENV_ROOT}/versions/${PYENV_VERSION}"
+  local expected_venv_prefix="${WORKSPACE_DIR}/.venv"
+
+  pyenv_which_python="$(run_pyenv which python)"
+  if [[ "$pyenv_which_python" != "$EXPECTED_PYENV_PYTHON" ]]; then
+    die "pyenv resolved python to '$pyenv_which_python' but expected '$EXPECTED_PYENV_PYTHON'."
+  fi
+
+  while IFS='=' read -r key value; do
+    case "$key" in
+      executable)
+        runtime_executable="$value"
+        ;;
+      prefix)
+        runtime_prefix="$value"
+        ;;
+      base_prefix)
+        runtime_base_prefix="$value"
+        ;;
+    esac
+  done < <(python_runtime_metadata)
+
+  if [[ -z "$runtime_executable" || -z "$runtime_prefix" || -z "$runtime_base_prefix" ]]; then
+    die "Could not determine Python runtime metadata for provenance checks."
+  fi
+
+  if [[ "$USE_VENV" == false ]]; then
+    if [[ "$runtime_executable" != "$EXPECTED_PYENV_PYTHON" ]]; then
+      die "Python executable mismatch. Expected '$EXPECTED_PYENV_PYTHON' but got '$runtime_executable'."
+    fi
+    if [[ "$runtime_base_prefix" != "$expected_pyenv_prefix" ]]; then
+      die "Python base prefix mismatch. Expected '$expected_pyenv_prefix' but got '$runtime_base_prefix'."
+    fi
+  else
+    if [[ "$runtime_executable" != "$EXPECTED_VENV_PYTHON" ]]; then
+      die "Venv executable mismatch. Expected '$EXPECTED_VENV_PYTHON' but got '$runtime_executable'."
+    fi
+    if [[ "$runtime_prefix" != "$expected_venv_prefix" ]]; then
+      die "Venv prefix mismatch. Expected '$expected_venv_prefix' but got '$runtime_prefix'."
+    fi
+    if [[ "$runtime_base_prefix" != "$expected_pyenv_prefix" ]]; then
+      die "Venv base interpreter mismatch. Expected '$expected_pyenv_prefix' but got '$runtime_base_prefix'."
+    fi
+  fi
+
+  log_info "Python provenance check passed: $runtime_executable"
+}
+
+has_pyenv_shell_markers() {
+  local rc_file="$1"
+  [[ -f "$rc_file" ]] || return 1
+
+  grep -Eq 'pyenv init' "$rc_file" || return 1
+  grep -Eq 'PYENV_ROOT|\.pyenv/bin' "$rc_file" || return 1
+}
+
+check_pyenv_shell_init() {
+  local bashrc="${TARGET_HOME}/.bashrc"
+  local zshrc="${TARGET_HOME}/.zshrc"
+
+  if has_pyenv_shell_markers "$bashrc" || has_pyenv_shell_markers "$zshrc"; then
+    log_info "Detected pyenv shell initialization for interactive shells."
+    return
+  fi
+
+  log_warn "No pyenv shell initialization detected in '$bashrc' or '$zshrc'."
+  log_warn "To use pyenv Python interactively as ${TARGET_USER}, add these lines:"
+  log_warn "  export PYENV_ROOT=\"\$HOME/.pyenv\""
+  log_warn "  export PATH=\"\$PYENV_ROOT/bin:\$PATH\""
+  log_warn "  eval \"\$(pyenv init - bash)\"   # bash"
+  log_warn "  eval \"\$(pyenv init - zsh)\"    # zsh"
 }
 
 download_if_missing() {
@@ -185,12 +281,16 @@ create_venv_if_requested() {
 
 verify_install() {
   run_python - <<'PYCODE'
-import torch, torchvision
+import numpy, torch, torchvision
 
 print('Torch:', torch.__version__)
 print('TorchVision:', torchvision.__version__)
+print('NumPy:', numpy.__version__)
 print('PyTorch CUDA version:', torch.version.cuda)
 print('CUDA available:', torch.cuda.is_available())
+
+if int(numpy.__version__.split('.')[0]) >= 2:
+    raise RuntimeError('NumPy must be < 2.0 for this setup.')
 
 if torch.cuda.is_available():
     name = torch.cuda.get_device_name(0)
@@ -225,6 +325,7 @@ main() {
   require_cmd dpkg
   require_cmd getent
   require_cmd git
+  require_cmd grep
   require_cmd wget
 
   configure_target_context
@@ -252,6 +353,7 @@ main() {
     zlib1g-dev
 
   setup_pyenv
+  assert_python_provenance
 
   log_info "Installing cuSPARSELt (required by torch 2.5.0)..."
   wget "$CUDA_KEYRING_URL" -O "$CUDA_KEYRING_DEB_PATH"
@@ -273,6 +375,7 @@ main() {
   download_if_missing "$WHEEL_CACHE/$TORCHVISION_WHL" "$TORCHVISION_URL"
 
   create_venv_if_requested
+  assert_python_provenance
 
   log_info "Upgrading pip..."
   run_pip install --upgrade pip
@@ -288,6 +391,9 @@ main() {
 
   log_info "Verifying installation..."
   verify_install
+
+  log_info "Runtime commands were executed with pyenv-managed Python."
+  check_pyenv_shell_init
 
   log_info "Done."
 }
