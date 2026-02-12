@@ -8,7 +8,7 @@ readonly EXIT_USAGE_ERROR=2
 
 readonly DOWNLOAD_DIR="/tmp"
 readonly DOWNLOAD_URL="https://update.code.visualstudio.com/latest/linux-deb-arm64/stable"
-readonly FALLBACK_FILENAME="vscode_latest_arm64.deb"
+readonly VSCODE_DEB_FILENAME="vscode_latest_arm64.deb"
 
 DEB_FILE=""
 CURRENT_USER=""
@@ -93,22 +93,8 @@ on_exit() {
   fi
 }
 
-determine_filename() {
-  local filename
-  filename="$(wget --spider "$DOWNLOAD_URL" 2>&1 | grep -oP 'filename="\K[^"]+' || true)"
-
-  if [[ -z "$filename" ]]; then
-    log_warn "Could not determine server filename. Using fallback '$FALLBACK_FILENAME'."
-    filename="$FALLBACK_FILENAME"
-  fi
-
-  printf '%s\n' "$filename"
-}
-
 download_vscode() {
-  local filename
-  filename="$(determine_filename)"
-  DEB_FILE="${DOWNLOAD_DIR}/${filename}"
+  DEB_FILE="${DOWNLOAD_DIR}/${VSCODE_DEB_FILENAME}"
 
   log_info "Fetching latest Visual Studio Code ARM64 .deb package..."
   wget -O "$DEB_FILE" "$DOWNLOAD_URL"
@@ -158,7 +144,6 @@ main() {
 
   require_cmd apt-get
   require_cmd dpkg
-  require_cmd grep
   require_cmd sudo
   require_cmd wget
 
