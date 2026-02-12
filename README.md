@@ -8,7 +8,8 @@ Utility scripts for setting up a Jetson Orin Nano development environment.
 Installs a Jetson-compatible PyTorch stack with CUDA dependencies.
 
 What it does:
-- Installs base packages (`python3-pip`, `python3-venv`, `libopenblas-dev`, `wget`)
+- Requires `sudo` (must be run from a non-root user via `sudo`)
+- Installs base build and Python dependencies needed for `pyenv` + PyTorch wheels
 - Installs cuSPARSELt (`libcusparselt0`, `libcusparselt-dev`) for Torch 2.5.0 dependency support
 - Downloads cached wheel files for `torch` and `torchvision`
 - Installs `onnxruntime-gpu 1.23.0` (Python 3.10, ARM64 wheel)
@@ -17,19 +18,20 @@ What it does:
 
 Usage:
 ```bash
-bash install-pytorch.sh
+sudo bash install-pytorch.sh
 ```
 
 Options:
 ```bash
-bash install-pytorch.sh --venv
-bash install-pytorch.sh --clean-cache
-bash install-pytorch.sh --venv --clean-cache
+sudo bash install-pytorch.sh --venv
+sudo bash install-pytorch.sh --clean-cache
+sudo bash install-pytorch.sh --venv --clean-cache
+sudo bash install-pytorch.sh --help
 ```
 
 Notes:
-- `--venv` creates/uses `~/Workspace/.venv`
-- Wheel cache directory: `~/.cache/pytorch_wheels`
+- `--venv` creates/uses `<sudo-user-home>/Workspace/.venv`
+- Wheel cache directory: `<sudo-user-home>/.cache/pytorch_wheels`
 
 ### `install-vscode.sh`
 Downloads and installs the latest stable ARM64 `.deb` build of Visual Studio Code.
@@ -44,6 +46,7 @@ What it does:
 Usage:
 ```bash
 sudo bash install-vscode.sh
+sudo bash install-vscode.sh --help
 ```
 
 ### `revert-snap.sh`
@@ -51,19 +54,21 @@ Downloads and reinstalls a specific `snapd` revision, then places it on hold.
 
 Usage:
 ```bash
-bash revert-snap.sh
+sudo bash revert-snap.sh
 ```
 
 Specify a revision:
 ```bash
-bash revert-snap.sh 24724
+sudo bash revert-snap.sh 24724
+sudo bash revert-snap.sh --revision 24724
+sudo bash revert-snap.sh --help
 ```
 
 What it does:
 - `snap download snapd --revision=<REVISION>`
-- `sudo snap ack ...`
-- `sudo snap install ...`
-- `sudo snap refresh --hold snapd`
+- `snap ack ...`
+- `snap install ...`
+- `snap refresh --hold snapd`
 
 ### `camera.py`
 Simple OpenCV CSI camera test script for Jetson.
