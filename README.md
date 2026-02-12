@@ -33,7 +33,7 @@ Notes:
 - `--venv` creates/uses `<sudo-user-home>/Workspace/.venv`
 - Wheel cache directory: `<sudo-user-home>/.cache/pytorch_wheels`
 - Script fails fast if runtime Python is not the expected pyenv interpreter (or a venv based on it)
-- Script checks for pyenv shell init in `<sudo-user-home>/.bashrc` / `<sudo-user-home>/.zshrc` and prints manual setup commands if missing
+- Script checks for pyenv shell init in `<sudo-user-home>/.bashrc` and prints manual setup commands if missing
 
 ### `install-vscode.sh`
 Downloads and installs the latest stable ARM64 `.deb` build of Visual Studio Code.

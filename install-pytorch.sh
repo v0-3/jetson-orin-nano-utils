@@ -241,19 +241,17 @@ has_pyenv_shell_markers() {
 
 check_pyenv_shell_init() {
   local bashrc="${TARGET_HOME}/.bashrc"
-  local zshrc="${TARGET_HOME}/.zshrc"
 
-  if has_pyenv_shell_markers "$bashrc" || has_pyenv_shell_markers "$zshrc"; then
+  if has_pyenv_shell_markers "$bashrc"; then
     log_info "Detected pyenv shell initialization for interactive shells."
     return
   fi
 
-  log_warn "No pyenv shell initialization detected in '$bashrc' or '$zshrc'."
-  log_warn "To use pyenv Python interactively as ${TARGET_USER}, add these lines:"
-  log_warn "  export PYENV_ROOT=\"\$HOME/.pyenv\""
-  log_warn "  export PATH=\"\$PYENV_ROOT/bin:\$PATH\""
-  log_warn "  eval \"\$(pyenv init - bash)\"   # bash"
-  log_warn "  eval \"\$(pyenv init - zsh)\"    # zsh"
+  log_warn "No pyenv shell initialization detected in '$bashrc'."
+  log_warn "To use pyenv Python interactively as ${TARGET_USER}, run:"
+  log_warn "  echo 'export PYENV_ROOT=\"\$HOME/.pyenv\"' >> ~/.bashrc"
+  log_warn "  echo '[[ -d \$PYENV_ROOT/bin ]] && export PATH=\"\$PYENV_ROOT/bin:\$PATH\"' >> ~/.bashrc"
+  log_warn "  echo 'eval \"\$(pyenv init - bash)\"' >> ~/.bashrc"
 }
 
 download_if_missing() {
