@@ -72,6 +72,23 @@ What it does:
 - `snap install ...`
 - `snap refresh --hold snapd`
 
+### `set-terminal-font.sh`
+Sets GNOME Terminal font for the default profile.
+
+What it does:
+- Must be run as a regular user (not `sudo`)
+- Validates required commands (`gsettings`, `dconf`)
+- Resolves the default GNOME Terminal profile UUID (or falls back to the first profile)
+- Sets terminal font to `JetBrains Mono 14`
+- Verifies the font settings after applying
+- Warns if Snap `gnome-terminal` is installed (settings may not apply as expected)
+
+Usage:
+```bash
+bash set-terminal-font.sh
+bash set-terminal-font.sh --help
+```
+
 ### `camera.py`
 Simple OpenCV CSI camera test script for Jetson.
 
