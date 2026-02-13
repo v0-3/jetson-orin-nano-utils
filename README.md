@@ -1,6 +1,6 @@
-# Jetson Orin Nano Setup
+# Jetson Orin Nano Utils
 
-Utility scripts for setting up a Jetson Orin Nano development environment.
+Utility scripts for setting up a Nvidia Jetson Orin Nano development environment.
 
 ## Scripts
 
