@@ -9,7 +9,7 @@ Installs a Jetson-compatible PyTorch stack with CUDA dependencies.
 
 What it does:
 - Requires `sudo` (must be run from a non-root user via `sudo`)
-- Installs base build and Python dependencies needed for `pyenv` + PyTorch wheels
+- Uses system `python3` and installs required Python packages globally
 - Installs cuSPARSELt (`libcusparselt0`, `libcusparselt-dev`) for Torch 2.5.0 dependency support
 - Downloads cached wheel files for `torch` and `torchvision`
 - Installs `onnxruntime-gpu 1.23.0` (Python 3.10, ARM64 wheel)
@@ -23,17 +23,15 @@ sudo bash install-pytorch.sh
 
 Options:
 ```bash
-sudo bash install-pytorch.sh --venv
 sudo bash install-pytorch.sh --clean-cache
-sudo bash install-pytorch.sh --venv --clean-cache
 sudo bash install-pytorch.sh --help
 ```
 
 Notes:
-- `--venv` creates/uses `<sudo-user-home>/Workspace/.venv`
+- System `python3` must be version `3.10` (required by `cp310` wheels)
+- No `pyenv` or virtual environment is used
+- `--venv` is not supported and returns a usage error
 - Wheel cache directory: `<sudo-user-home>/.cache/pytorch_wheels`
-- Script fails fast if runtime Python is not the expected pyenv interpreter (or a venv based on it)
-- Script checks for pyenv shell init in `<sudo-user-home>/.bashrc` and prints manual setup commands if missing
 
 ### `install-vscode.sh`
 Downloads and installs the latest stable ARM64 `.deb` build of Visual Studio Code.
