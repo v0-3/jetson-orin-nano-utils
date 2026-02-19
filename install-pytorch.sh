@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-readonly SCRIPT_NAME="$(basename "$0")"
+readonly SCRIPT_NAME="$(basename -- "${BASH_SOURCE[0]}")"
 readonly EXIT_RUNTIME_ERROR=1
 readonly EXIT_USAGE_ERROR=2
 
@@ -13,29 +13,34 @@ readonly TORCH_URL="https://github.com/ultralytics/assets/releases/download/v0.0
 readonly TORCHVISION_URL="https://github.com/ultralytics/assets/releases/download/v0.0.0/${TORCHVISION_WHL}"
 readonly CUDA_KEYRING_DEB="cuda-keyring_1.1-1_all.deb"
 readonly CUDA_KEYRING_URL="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/arm64/${CUDA_KEYRING_DEB}"
-readonly CUDA_KEYRING_DEB_PATH="/tmp/${CUDA_KEYRING_DEB}"
 
 CLEAN_CACHE=false
 TARGET_USER=""
 TARGET_HOME=""
 WHEEL_CACHE=""
+TMP_DIR=""
+CUDA_KEYRING_DEB_PATH=""
 PYTHON_CMD=(python3)
 
 log_info() {
-  printf '[INFO] %s\n' "$1"
+  local -r message="$1"
+  printf '[INFO] %s\n' "$message"
 }
 
 log_error() {
-  printf '[ERROR] %s\n' "$1" >&2
+  local -r message="$1"
+  printf '[ERROR] %s\n' "$message" >&2
 }
 
 die() {
-  log_error "$1"
+  local -r message="$1"
+  log_error "$message"
   exit "$EXIT_RUNTIME_ERROR"
 }
 
 die_usage() {
-  log_error "$1"
+  local -r message="$1"
+  log_error "$message"
   log_error "Run '${SCRIPT_NAME} --help' for usage."
   exit "$EXIT_USAGE_ERROR"
 }
@@ -91,21 +96,24 @@ require_cmds() {
 }
 
 on_err() {
-  local line_no="$1"
-  local exit_code="$2"
-  log_error "Command failed at line ${line_no} with exit code ${exit_code}."
+  local -r line_no="$1"
+  local -r exit_code="$2"
+  local -r failed_command="$3"
+  log_error "Command failed at line ${line_no} with exit code ${exit_code}: ${failed_command}"
   exit "$exit_code"
 }
 
 on_exit() {
-  if [[ -f "$CUDA_KEYRING_DEB_PATH" ]]; then
-    rm -f "$CUDA_KEYRING_DEB_PATH"
+  if [[ -n "${TMP_DIR:-}" && -d "${TMP_DIR}" ]]; then
+    rm -rf -- "${TMP_DIR}"
   fi
 }
 
 setup_traps() {
-  trap 'on_err "$LINENO" "$?"' ERR
+  trap 'on_err "$LINENO" "$?" "$BASH_COMMAND"' ERR
   trap on_exit EXIT
+  trap 'log_error "Interrupted by SIGINT."; exit 130' SIGINT
+  trap 'log_error "Interrupted by SIGTERM."; exit 143' SIGTERM
 }
 
 run_as_target() {
@@ -121,10 +129,14 @@ run_pip() {
 }
 
 configure_target_context() {
-  TARGET_USER="$SUDO_USER"
-  TARGET_HOME="$(getent passwd "$TARGET_USER" | cut -d: -f6)"
+  local passwd_entry=""
 
-  if [[ -z "$TARGET_HOME" ]]; then
+  TARGET_USER="$SUDO_USER"
+  passwd_entry="$(getent passwd "$TARGET_USER" || true)"
+  [[ -n "$passwd_entry" ]] || die "Could not resolve passwd entry for user '$TARGET_USER'."
+  TARGET_HOME="$(printf '%s\n' "$passwd_entry" | cut -d: -f6)"
+
+  if [[ -z "$TARGET_HOME" || ! -d "$TARGET_HOME" ]]; then
     die "Could not determine home directory for user '$TARGET_USER'."
   fi
 
@@ -148,12 +160,15 @@ PYCODE
 }
 
 download_if_missing() {
-  local filepath="$1"
-  local url="$2"
+  local -r filepath="$1"
+  local -r url="$2"
 
-  if ! run_as_target test -f "$filepath"; then
-    run_as_target wget "$url" -O "$filepath"
+  if run_as_target test -s "$filepath"; then
+    return
   fi
+
+  run_as_target wget "$url" -O "$filepath"
+  run_as_target test -s "$filepath" || die "Downloaded wheel is missing or empty: $filepath"
 }
 
 install_system_packages() {
@@ -179,6 +194,7 @@ install_cuda_dependencies() {
 prepare_wheels() {
   run_pip uninstall -y torch torchvision || true
   run_as_target mkdir -p "$WHEEL_CACHE"
+  run_as_target test -d "$WHEEL_CACHE" || die "Could not create wheel cache directory: $WHEEL_CACHE"
 
   if [[ "$CLEAN_CACHE" == true ]]; then
     log_info "Cleaning wheel cache..."
@@ -241,7 +257,9 @@ PYCODE
 setup_environment() {
   require_root
   setup_traps
-  require_cmds apt-get cut dpkg find getent python3 sudo wget
+  require_cmds apt-get cut dpkg find getent mktemp python3 sudo wget
+  TMP_DIR="$(mktemp -d)"
+  CUDA_KEYRING_DEB_PATH="${TMP_DIR}/${CUDA_KEYRING_DEB}"
   configure_target_context
 
   log_info "Installing PyTorch for Jetson Orin Nano"

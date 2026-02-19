@@ -2,36 +2,41 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-readonly SCRIPT_NAME="$(basename "$0")"
+readonly SCRIPT_NAME="$(basename -- "${BASH_SOURCE[0]}")"
 readonly EXIT_RUNTIME_ERROR=1
 readonly EXIT_USAGE_ERROR=2
 
-readonly DOWNLOAD_DIR="/tmp"
 readonly DOWNLOAD_URL="https://update.code.visualstudio.com/latest/linux-deb-arm64/stable"
 readonly VSCODE_DEB_FILENAME="vscode_latest_arm64.deb"
 
 DEB_FILE=""
 TARGET_USER=""
+TMP_DIR=""
 
 log_info() {
-  printf '[INFO] %s\n' "$1"
+  local -r message="$1"
+  printf '[INFO] %s\n' "$message"
 }
 
 log_warn() {
-  printf '[WARN] %s\n' "$1"
+  local -r message="$1"
+  printf '[WARN] %s\n' "$message"
 }
 
 log_error() {
-  printf '[ERROR] %s\n' "$1" >&2
+  local -r message="$1"
+  printf '[ERROR] %s\n' "$message" >&2
 }
 
 die() {
-  log_error "$1"
+  local -r message="$1"
+  log_error "$message"
   exit "$EXIT_RUNTIME_ERROR"
 }
 
 die_usage() {
-  log_error "$1"
+  local -r message="$1"
+  log_error "$message"
   log_error "Run '${SCRIPT_NAME} --help' for usage."
   exit "$EXIT_USAGE_ERROR"
 }
@@ -82,22 +87,29 @@ require_cmds() {
 }
 
 on_err() {
-  local line_no="$1"
-  local exit_code="$2"
-  log_error "Command failed at line ${line_no} with exit code ${exit_code}."
+  local -r line_no="$1"
+  local -r exit_code="$2"
+  local -r failed_command="$3"
+  log_error "Command failed at line ${line_no} with exit code ${exit_code}: ${failed_command}"
   exit "$exit_code"
 }
 
 on_exit() {
-  if [[ -n "$DEB_FILE" && -f "$DEB_FILE" ]]; then
+  if [[ -n "${DEB_FILE:-}" && -f "${DEB_FILE}" ]]; then
     log_info "Cleaning up downloaded package..."
-    rm -f "$DEB_FILE"
+    rm -f -- "${DEB_FILE}"
+  fi
+
+  if [[ -n "${TMP_DIR:-}" && -d "${TMP_DIR}" ]]; then
+    rm -rf -- "${TMP_DIR}"
   fi
 }
 
 setup_traps() {
-  trap 'on_err "$LINENO" "$?"' ERR
+  trap 'on_err "$LINENO" "$?" "$BASH_COMMAND"' ERR
   trap on_exit EXIT
+  trap 'log_error "Interrupted by SIGINT."; exit 130' SIGINT
+  trap 'log_error "Interrupted by SIGTERM."; exit 143' SIGTERM
 }
 
 install_dependencies() {
@@ -109,7 +121,8 @@ install_dependencies() {
 }
 
 download_vscode() {
-  DEB_FILE="${DOWNLOAD_DIR}/${VSCODE_DEB_FILENAME}"
+  TMP_DIR="$(mktemp -d)"
+  DEB_FILE="${TMP_DIR}/${VSCODE_DEB_FILENAME}"
 
   log_info "Fetching latest Visual Studio Code ARM64 .deb package..."
   wget -O "$DEB_FILE" "$DOWNLOAD_URL"
@@ -129,8 +142,15 @@ install_vscode() {
   fi
 }
 
+verify_package_installation() {
+  local package_status=""
+  package_status="$(dpkg-query -W -f='${Status}' code 2>/dev/null || true)"
+  [[ "$package_status" == "install ok installed" ]] || die "Visual Studio Code package is not installed."
+}
+
 verify_installation() {
   log_info "Verifying installation..."
+  verify_package_installation
 
   if sudo -u "$TARGET_USER" bash -lc 'command -v code >/dev/null 2>&1'; then
     log_info "VS Code version:"
@@ -146,7 +166,7 @@ main() {
   parse_args "$@"
   require_root
   setup_traps
-  require_cmds apt-get dpkg sudo wget
+  require_cmds apt-get dpkg dpkg-query mktemp sudo wget
 
   TARGET_USER="$SUDO_USER"
   log_info "Target user: $TARGET_USER"

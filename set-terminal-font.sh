@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-readonly SCRIPT_NAME="$(basename "$0")"
+readonly SCRIPT_NAME="$(basename -- "${BASH_SOURCE[0]}")"
 readonly EXIT_RUNTIME_ERROR=1
 readonly EXIT_USAGE_ERROR=2
 readonly TARGET_FONT="JetBrains Mono 14"
@@ -13,24 +13,29 @@ DEFAULT_PROFILE_UUID=""
 PROFILE_PATH=""
 
 log_info() {
-  printf '[INFO] %s\n' "$1"
+  local -r message="$1"
+  printf '[INFO] %s\n' "$message"
 }
 
 log_warn() {
-  printf '[WARN] %s\n' "$1"
+  local -r message="$1"
+  printf '[WARN] %s\n' "$message"
 }
 
 log_error() {
-  printf '[ERROR] %s\n' "$1" >&2
+  local -r message="$1"
+  printf '[ERROR] %s\n' "$message" >&2
 }
 
 die() {
-  log_error "$1"
+  local -r message="$1"
+  log_error "$message"
   exit "$EXIT_RUNTIME_ERROR"
 }
 
 die_usage() {
-  log_error "$1"
+  local -r message="$1"
+  log_error "$message"
   log_error "Run '${SCRIPT_NAME} --help' for usage."
   exit "$EXIT_USAGE_ERROR"
 }
@@ -78,14 +83,17 @@ require_cmds() {
 }
 
 on_err() {
-  local line_no="$1"
-  local exit_code="$2"
-  log_error "Command failed at line ${line_no} with exit code ${exit_code}."
+  local -r line_no="$1"
+  local -r exit_code="$2"
+  local -r failed_command="$3"
+  log_error "Command failed at line ${line_no} with exit code ${exit_code}: ${failed_command}"
   exit "$exit_code"
 }
 
 setup_traps() {
-  trap 'on_err "$LINENO" "$?"' ERR
+  trap 'on_err "$LINENO" "$?" "$BASH_COMMAND"' ERR
+  trap 'log_error "Interrupted by SIGINT."; exit 130' SIGINT
+  trap 'log_error "Interrupted by SIGTERM."; exit 143' SIGTERM
 }
 
 warn_if_snap_terminal_installed() {
@@ -96,9 +104,16 @@ warn_if_snap_terminal_installed() {
 }
 
 validate_schema() {
-  if ! gsettings list-schemas | grep -Fxq "$SCHEMA_PROFILES"; then
+  if ! gsettings get "$SCHEMA_PROFILES" default >/dev/null 2>&1; then
     die "Schema '${SCHEMA_PROFILES}' not found. Ensure GNOME Terminal is installed."
   fi
+}
+
+trim_whitespace() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
 }
 
 strip_single_quotes() {
@@ -115,17 +130,26 @@ resolve_default_profile_uuid() {
 
   raw_default="$(gsettings get "$SCHEMA_PROFILES" default)"
   DEFAULT_PROFILE_UUID="$(strip_single_quotes "$raw_default")"
+  DEFAULT_PROFILE_UUID="$(trim_whitespace "$DEFAULT_PROFILE_UUID")"
 
   if [[ -n "$DEFAULT_PROFILE_UUID" ]]; then
     return
   fi
 
   profile_list_raw="$(gsettings get "$SCHEMA_PROFILES" list)"
+  profile_list_raw="${profile_list_raw#@as }"
   profile_list="${profile_list_raw#[}"
   profile_list="${profile_list%]}"
+  profile_list="$(trim_whitespace "$profile_list")"
+
+  if [[ -z "$profile_list" ]]; then
+    die "No GNOME Terminal profiles found. Set up a profile first in Terminal preferences."
+  fi
+
   DEFAULT_PROFILE_UUID="${profile_list%%,*}"
-  DEFAULT_PROFILE_UUID="${DEFAULT_PROFILE_UUID## }"
+  DEFAULT_PROFILE_UUID="$(trim_whitespace "$DEFAULT_PROFILE_UUID")"
   DEFAULT_PROFILE_UUID="$(strip_single_quotes "$DEFAULT_PROFILE_UUID")"
+  DEFAULT_PROFILE_UUID="$(trim_whitespace "$DEFAULT_PROFILE_UUID")"
 
   if [[ -z "$DEFAULT_PROFILE_UUID" ]]; then
     die "No GNOME Terminal profiles found. Set up a profile first in Terminal preferences."
@@ -140,6 +164,17 @@ build_profile_path() {
 }
 
 apply_font_settings() {
+  local current_font=""
+  local current_use_sys=""
+
+  current_font="$(dconf read "${PROFILE_PATH}font")"
+  current_use_sys="$(dconf read "${PROFILE_PATH}use-system-font")"
+
+  if [[ "$current_font" == "'${TARGET_FONT}'" && "$current_use_sys" == "false" ]]; then
+    log_info "GNOME Terminal font already set to '${TARGET_FONT}'."
+    return
+  fi
+
   dconf write "${PROFILE_PATH}use-system-font" "false"
   dconf write "${PROFILE_PATH}font" "'${TARGET_FONT}'"
 }
@@ -160,7 +195,7 @@ main() {
   parse_args "$@"
   require_non_root
   setup_traps
-  require_cmds dconf gsettings grep
+  require_cmds dconf gsettings
 
   warn_if_snap_terminal_installed
   validate_schema

@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-readonly SCRIPT_NAME="$(basename "$0")"
+readonly SCRIPT_NAME="$(basename -- "${BASH_SOURCE[0]}")"
 readonly EXIT_RUNTIME_ERROR=1
 readonly EXIT_USAGE_ERROR=2
 readonly SNAP_NAME="snapd"
@@ -11,22 +11,28 @@ readonly DEFAULT_REVISION="24724"
 REVISION="$DEFAULT_REVISION"
 ASSERT_FILE=""
 SNAP_FILE=""
+ASSERT_FILE_PREEXISTED=false
+SNAP_FILE_PREEXISTED=false
 
 log_info() {
-  printf '[INFO] %s\n' "$1"
+  local -r message="$1"
+  printf '[INFO] %s\n' "$message"
 }
 
 log_error() {
-  printf '[ERROR] %s\n' "$1" >&2
+  local -r message="$1"
+  printf '[ERROR] %s\n' "$message" >&2
 }
 
 die() {
-  log_error "$1"
+  local -r message="$1"
+  log_error "$message"
   exit "$EXIT_RUNTIME_ERROR"
 }
 
 die_usage() {
-  log_error "$1"
+  local -r message="$1"
+  log_error "$message"
   log_error "Run '${SCRIPT_NAME} --help' for usage."
   exit "$EXIT_USAGE_ERROR"
 }
@@ -98,14 +104,28 @@ require_cmds() {
 }
 
 on_err() {
-  local line_no="$1"
-  local exit_code="$2"
-  log_error "Command failed at line ${line_no} with exit code ${exit_code}."
+  local -r line_no="$1"
+  local -r exit_code="$2"
+  local -r failed_command="$3"
+  log_error "Command failed at line ${line_no} with exit code ${exit_code}: ${failed_command}"
   exit "$exit_code"
 }
 
+on_exit() {
+  if [[ "${ASSERT_FILE_PREEXISTED:-false}" == false && -n "${ASSERT_FILE:-}" && -f "${ASSERT_FILE}" ]]; then
+    rm -f -- "${ASSERT_FILE}"
+  fi
+
+  if [[ "${SNAP_FILE_PREEXISTED:-false}" == false && -n "${SNAP_FILE:-}" && -f "${SNAP_FILE}" ]]; then
+    rm -f -- "${SNAP_FILE}"
+  fi
+}
+
 setup_traps() {
-  trap 'on_err "$LINENO" "$?"' ERR
+  trap 'on_err "$LINENO" "$?" "$BASH_COMMAND"' ERR
+  trap on_exit EXIT
+  trap 'log_error "Interrupted by SIGINT."; exit 130' SIGINT
+  trap 'log_error "Interrupted by SIGTERM."; exit 143' SIGTERM
 }
 
 validate_revision() {
@@ -117,6 +137,13 @@ validate_revision() {
 prepare_files() {
   ASSERT_FILE="${SNAP_NAME}_${REVISION}.assert"
   SNAP_FILE="${SNAP_NAME}_${REVISION}.snap"
+  [[ -e "$ASSERT_FILE" ]] && ASSERT_FILE_PREEXISTED=true
+  [[ -e "$SNAP_FILE" ]] && SNAP_FILE_PREEXISTED=true
+}
+
+verify_downloaded_files() {
+  [[ -s "$ASSERT_FILE" ]] || die "Downloaded assertion file is missing or empty: ${ASSERT_FILE}"
+  [[ -s "$SNAP_FILE" ]] || die "Downloaded snap file is missing or empty: ${SNAP_FILE}"
 }
 
 main() {
@@ -130,6 +157,7 @@ main() {
 
   log_info "Downloading ${SNAP_NAME} revision ${REVISION}..."
   snap download "$SNAP_NAME" --revision="$REVISION"
+  verify_downloaded_files
 
   log_info "Acknowledging assertion file ${ASSERT_FILE}..."
   snap ack "$ASSERT_FILE"
