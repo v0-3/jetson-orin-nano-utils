@@ -16,10 +16,6 @@ log_info() {
   printf '[INFO] %s\n' "$1"
 }
 
-log_warn() {
-  printf '[WARN] %s\n' "$1"
-}
-
 log_error() {
   printf '[ERROR] %s\n' "$1" >&2
 }
@@ -64,7 +60,7 @@ parse_args() {
         usage
         exit 0
         ;;
-      -*)
+      -* )
         die_usage "Unknown option: $1"
         ;;
       *)
@@ -92,11 +88,13 @@ require_root() {
   fi
 }
 
-require_cmd() {
-  local cmd="$1"
-  if ! command -v "$cmd" >/dev/null 2>&1; then
-    die "Required command not found: $cmd"
-  fi
+require_cmds() {
+  local cmd=""
+  for cmd in "$@"; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      die "Required command not found: $cmd"
+    fi
+  done
 }
 
 on_err() {
@@ -104,6 +102,10 @@ on_err() {
   local exit_code="$2"
   log_error "Command failed at line ${line_no} with exit code ${exit_code}."
   exit "$exit_code"
+}
+
+setup_traps() {
+  trap 'on_err "$LINENO" "$?"' ERR
 }
 
 validate_revision() {
@@ -121,10 +123,8 @@ main() {
   parse_args "$@"
   validate_revision
   require_root
-
-  trap 'on_err "$LINENO" "$?"' ERR
-
-  require_cmd snap
+  setup_traps
+  require_cmds snap
 
   prepare_files
 

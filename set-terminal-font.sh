@@ -68,11 +68,13 @@ require_non_root() {
   fi
 }
 
-require_cmd() {
-  local cmd="$1"
-  if ! command -v "$cmd" >/dev/null 2>&1; then
-    die "Required command not found: $cmd"
-  fi
+require_cmds() {
+  local cmd=""
+  for cmd in "$@"; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      die "Required command not found: $cmd"
+    fi
+  done
 }
 
 on_err() {
@@ -80,6 +82,10 @@ on_err() {
   local exit_code="$2"
   log_error "Command failed at line ${line_no} with exit code ${exit_code}."
   exit "$exit_code"
+}
+
+setup_traps() {
+  trap 'on_err "$LINENO" "$?"' ERR
 }
 
 warn_if_snap_terminal_installed() {
@@ -95,26 +101,36 @@ validate_schema() {
   fi
 }
 
+strip_single_quotes() {
+  local value="$1"
+  value="${value#\'}"
+  value="${value%\'}"
+  printf '%s' "$value"
+}
+
 resolve_default_profile_uuid() {
   local raw_default=""
   local profile_list_raw=""
-  local first_profile_uuid=""
+  local profile_list=""
 
   raw_default="$(gsettings get "$SCHEMA_PROFILES" default)"
-  DEFAULT_PROFILE_UUID="$(tr -d "'" <<<"$raw_default")"
+  DEFAULT_PROFILE_UUID="$(strip_single_quotes "$raw_default")"
 
   if [[ -n "$DEFAULT_PROFILE_UUID" ]]; then
     return
   fi
 
   profile_list_raw="$(gsettings get "$SCHEMA_PROFILES" list)"
-  first_profile_uuid="$(sed -e "s/^[^']*'//" -e "s/'.*//" <<<"$profile_list_raw" | head -n 1)"
+  profile_list="${profile_list_raw#[}"
+  profile_list="${profile_list%]}"
+  DEFAULT_PROFILE_UUID="${profile_list%%,*}"
+  DEFAULT_PROFILE_UUID="${DEFAULT_PROFILE_UUID## }"
+  DEFAULT_PROFILE_UUID="$(strip_single_quotes "$DEFAULT_PROFILE_UUID")"
 
-  if [[ -z "$first_profile_uuid" ]]; then
+  if [[ -z "$DEFAULT_PROFILE_UUID" ]]; then
     die "No GNOME Terminal profiles found. Set up a profile first in Terminal preferences."
   fi
 
-  DEFAULT_PROFILE_UUID="$first_profile_uuid"
   gsettings set "$SCHEMA_PROFILES" default "'${DEFAULT_PROFILE_UUID}'"
   log_info "No default profile set; using first profile '${DEFAULT_PROFILE_UUID}'."
 }
@@ -143,15 +159,8 @@ verify_font_settings() {
 main() {
   parse_args "$@"
   require_non_root
-
-  trap 'on_err "$LINENO" "$?"' ERR
-
-  require_cmd dconf
-  require_cmd gsettings
-  require_cmd grep
-  require_cmd head
-  require_cmd sed
-  require_cmd tr
+  setup_traps
+  require_cmds dconf gsettings grep
 
   warn_if_snap_terminal_installed
   validate_schema

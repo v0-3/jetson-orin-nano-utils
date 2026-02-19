@@ -11,7 +11,7 @@ readonly DOWNLOAD_URL="https://update.code.visualstudio.com/latest/linux-deb-arm
 readonly VSCODE_DEB_FILENAME="vscode_latest_arm64.deb"
 
 DEB_FILE=""
-CURRENT_USER=""
+TARGET_USER=""
 
 log_info() {
   printf '[INFO] %s\n' "$1"
@@ -72,11 +72,13 @@ require_root() {
   fi
 }
 
-require_cmd() {
-  local cmd="$1"
-  if ! command -v "$cmd" >/dev/null 2>&1; then
-    die "Required command not found: $cmd"
-  fi
+require_cmds() {
+  local cmd=""
+  for cmd in "$@"; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      die "Required command not found: $cmd"
+    fi
+  done
 }
 
 on_err() {
@@ -93,6 +95,19 @@ on_exit() {
   fi
 }
 
+setup_traps() {
+  trap 'on_err "$LINENO" "$?"' ERR
+  trap on_exit EXIT
+}
+
+install_dependencies() {
+  log_info "Updating package lists..."
+  apt-get update
+
+  log_info "Installing required dependencies..."
+  apt-get install -y wget apt-transport-https
+}
+
 download_vscode() {
   DEB_FILE="${DOWNLOAD_DIR}/${VSCODE_DEB_FILENAME}"
 
@@ -106,14 +121,6 @@ download_vscode() {
   log_info "Downloaded file saved as: $DEB_FILE"
 }
 
-install_dependencies() {
-  log_info "Updating package lists..."
-  apt-get update
-
-  log_info "Installing required dependencies..."
-  apt-get install -y wget apt-transport-https
-}
-
 install_vscode() {
   log_info "Installing Visual Studio Code..."
   if ! dpkg -i "$DEB_FILE"; then
@@ -125,9 +132,9 @@ install_vscode() {
 verify_installation() {
   log_info "Verifying installation..."
 
-  if sudo -u "$CURRENT_USER" bash -lc 'command -v code >/dev/null 2>&1'; then
+  if sudo -u "$TARGET_USER" bash -lc 'command -v code >/dev/null 2>&1'; then
     log_info "VS Code version:"
-    sudo -u "$CURRENT_USER" bash -lc 'code --version'
+    sudo -u "$TARGET_USER" bash -lc 'code --version'
     log_info "Visual Studio Code installed successfully."
     return
   fi
@@ -138,17 +145,11 @@ verify_installation() {
 main() {
   parse_args "$@"
   require_root
+  setup_traps
+  require_cmds apt-get dpkg sudo wget
 
-  trap 'on_err "$LINENO" "$?"' ERR
-  trap on_exit EXIT
-
-  require_cmd apt-get
-  require_cmd dpkg
-  require_cmd sudo
-  require_cmd wget
-
-  CURRENT_USER="$SUDO_USER"
-  log_info "Target user: $CURRENT_USER"
+  TARGET_USER="$SUDO_USER"
+  log_info "Target user: $TARGET_USER"
 
   install_dependencies
   download_vscode
