@@ -87,7 +87,7 @@ bash set-terminal-font.sh
 bash set-terminal-font.sh --help
 ```
 
-### `camera.py`
+### `csi-camera.py`
 Simple OpenCV CSI camera test script for Jetson.
 
 What it does:
@@ -97,7 +97,7 @@ What it does:
 
 Usage:
 ```bash
-python3 camera.py
+python3 csi-camera.py
 ```
 
 ## Requirements
