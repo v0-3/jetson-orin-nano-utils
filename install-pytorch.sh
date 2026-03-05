@@ -12,6 +12,9 @@ readonly TORCHVISION_VERSION="0.25.0"
 readonly ONNXRUNTIME_GPU_VERSION="1.23.0"
 readonly CUDA_KEYRING_DEB="cuda-keyring_1.1-1_all.deb"
 readonly CUDA_KEYRING_URL="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/arm64/${CUDA_KEYRING_DEB}"
+readonly CUDSS_LIB_DIR="/usr/lib/aarch64-linux-gnu/libcudss/12"
+readonly CUDSS_LDCONF_PATH="/etc/ld.so.conf.d/libcudss.conf"
+readonly CUDSS_SYSTEM_LINK="/usr/lib/aarch64-linux-gnu/libcudss.so.0"
 
 TMP_DIR=""
 CUDA_KEYRING_DEB_PATH=""
@@ -108,6 +111,11 @@ setup_traps() {
 }
 
 run_python() {
+  if [[ -d "$CUDSS_LIB_DIR" ]]; then
+    LD_LIBRARY_PATH="${CUDSS_LIB_DIR}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}" "${PYTHON_CMD[@]}" "$@"
+    return
+  fi
+
   "${PYTHON_CMD[@]}" "$@"
 }
 
@@ -144,11 +152,29 @@ install_system_packages() {
 }
 
 install_cuda_dependencies() {
-  log_info "Installing cuSPARSELt dependency for Jetson PyTorch packages..."
+  log_info "Installing cuSPARSELt and cuDSS dependencies for Jetson PyTorch packages..."
   wget "$CUDA_KEYRING_URL" -O "$CUDA_KEYRING_DEB_PATH"
   dpkg -i "$CUDA_KEYRING_DEB_PATH"
   apt-get update
-  apt-get install -y libcusparselt0 libcusparselt-dev
+  apt-get install -y \
+    libcudss0-cuda-12 \
+    libcusparselt0 \
+    libcusparselt-dev
+}
+
+configure_dynamic_linker() {
+  log_info "Registering cuDSS runtime library path with ldconfig..."
+  [[ -f "${CUDSS_LIB_DIR}/libcudss.so.0" ]] || die "cuDSS runtime library not found in ${CUDSS_LIB_DIR}."
+
+  printf '%s\n' "$CUDSS_LIB_DIR" > "$CUDSS_LDCONF_PATH"
+  ln -sfn "${CUDSS_LIB_DIR}/libcudss.so.0" "$CUDSS_SYSTEM_LINK"
+  ldconfig
+
+  "${PYTHON_CMD[@]}" - <<'PYCODE'
+import ctypes
+
+ctypes.CDLL("libcudss.so.0")
+PYCODE
 }
 
 install_python_packages() {
@@ -165,9 +191,6 @@ install_python_packages() {
     "${index_args[@]}" \
     "onnxruntime-gpu==${ONNXRUNTIME_GPU_VERSION}"
 
-  log_info "Installing NumPy < 2.0..."
-  run_pip install --force-reinstall "numpy<2.0"
-
   log_info "Installing PyTorch ${TORCH_VERSION} and TorchVision ${TORCHVISION_VERSION} from Jetson AI Lab..."
   run_pip install --force-reinstall \
     "${index_args[@]}" \
@@ -177,16 +200,12 @@ install_python_packages() {
 
 verify_install() {
   run_python - <<'PYCODE'
-import numpy, torch, torchvision
+import torch, torchvision
 
 print('Torch:', torch.__version__)
 print('TorchVision:', torchvision.__version__)
-print('NumPy:', numpy.__version__)
 print('PyTorch CUDA version:', torch.version.cuda)
 print('CUDA available:', torch.cuda.is_available())
-
-if int(numpy.__version__.split('.')[0]) >= 2:
-    raise RuntimeError('NumPy must be < 2.0 for this setup.')
 
 if torch.cuda.is_available():
     name = torch.cuda.get_device_name(0)
@@ -212,7 +231,7 @@ PYCODE
 setup_environment() {
   require_root
   setup_traps
-  require_cmds apt-get dpkg mktemp python3 wget
+  require_cmds apt-get dpkg ldconfig ln mktemp python3 wget
   TMP_DIR="$(mktemp -d)"
   CUDA_KEYRING_DEB_PATH="${TMP_DIR}/${CUDA_KEYRING_DEB}"
 
@@ -232,6 +251,7 @@ main() {
   install_system_packages
   assert_system_python_compatibility
   install_cuda_dependencies
+  configure_dynamic_linker
   install_python_packages
   final_checks
 }

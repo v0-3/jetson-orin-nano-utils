@@ -10,10 +10,10 @@ Installs a Jetson-compatible PyTorch stack with CUDA dependencies.
 What it does:
 - Requires `sudo` (must be run from a non-root user via `sudo`)
 - Uses system `python3` and installs required Python packages globally
-- Installs cuSPARSELt (`libcusparselt0`, `libcusparselt-dev`) required by the Jetson PyTorch packages
+- Installs cuSPARSELt (`libcusparselt0`, `libcusparselt-dev`) and cuDSS (`libcudss0-cuda-12`) required by the Jetson PyTorch packages
+- Registers the cuDSS runtime with the dynamic linker and exposes `libcudss.so.0` in the standard multiarch library path
 - Installs `onnxruntime-gpu==1.23.0`, `torch==2.10.0`, and `torchvision==0.25.0`
 - Sources those three packages from the Jetson AI Lab index: `https://pypi.jetson-ai-lab.io/jp6/cu126`
-- Installs `numpy<2.0`
 - Verifies CUDA availability from Python
 
 Usage:
