@@ -6,18 +6,13 @@ readonly SCRIPT_NAME="$(basename -- "${BASH_SOURCE[0]}")"
 readonly EXIT_RUNTIME_ERROR=1
 readonly EXIT_USAGE_ERROR=2
 
-readonly TORCH_WHL="torch-2.5.0a0+872d972e41.nv24.08-cp310-cp310-linux_aarch64.whl"
-readonly TORCHVISION_WHL="torchvision-0.20.0a0+afc54f7-cp310-cp310-linux_aarch64.whl"
-readonly ONNXRUNTIME_GPU_WHL_URL="https://github.com/ultralytics/assets/releases/download/v0.0.0/onnxruntime_gpu-1.23.0-cp310-cp310-linux_aarch64.whl"
-readonly TORCH_URL="https://github.com/ultralytics/assets/releases/download/v0.0.0/${TORCH_WHL}"
-readonly TORCHVISION_URL="https://github.com/ultralytics/assets/releases/download/v0.0.0/${TORCHVISION_WHL}"
+readonly JETSON_AI_LAB_INDEX_URL="https://pypi.jetson-ai-lab.io/jp6/cu126"
+readonly TORCH_VERSION="2.10.0"
+readonly TORCHVISION_VERSION="0.25.0"
+readonly ONNXRUNTIME_GPU_VERSION="1.23.0"
 readonly CUDA_KEYRING_DEB="cuda-keyring_1.1-1_all.deb"
 readonly CUDA_KEYRING_URL="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/arm64/${CUDA_KEYRING_DEB}"
 
-CLEAN_CACHE=false
-TARGET_USER=""
-TARGET_HOME=""
-WHEEL_CACHE=""
 TMP_DIR=""
 CUDA_KEYRING_DEB_PATH=""
 PYTHON_CMD=(python3)
@@ -47,13 +42,12 @@ die_usage() {
 
 usage() {
   cat <<USAGE
-Usage: sudo bash ${SCRIPT_NAME} [--clean-cache]
+Usage: sudo bash ${SCRIPT_NAME}
 
-Install Jetson-compatible PyTorch/TorchVision wheels with CUDA dependencies
-using the system Python.
+Install Jetson-compatible PyTorch, TorchVision, and ONNX Runtime GPU packages
+from the Jetson AI Lab package index using the system Python.
 
 Options:
-  --clean-cache  Remove cached .whl files before downloading
   -h, --help     Show this help message
 USAGE
 }
@@ -61,9 +55,6 @@ USAGE
 parse_args() {
   while (($#)); do
     case "$1" in
-      --clean-cache)
-        CLEAN_CACHE=true
-        ;;
       -h|--help)
         usage
         exit 0
@@ -116,31 +107,12 @@ setup_traps() {
   trap 'log_error "Interrupted by SIGTERM."; exit 143' SIGTERM
 }
 
-run_as_target() {
-  sudo -H -u "$TARGET_USER" "$@"
-}
-
 run_python() {
   "${PYTHON_CMD[@]}" "$@"
 }
 
 run_pip() {
   run_python -m pip "$@"
-}
-
-configure_target_context() {
-  local passwd_entry=""
-
-  TARGET_USER="$SUDO_USER"
-  passwd_entry="$(getent passwd "$TARGET_USER" || true)"
-  [[ -n "$passwd_entry" ]] || die "Could not resolve passwd entry for user '$TARGET_USER'."
-  TARGET_HOME="$(printf '%s\n' "$passwd_entry" | cut -d: -f6)"
-
-  if [[ -z "$TARGET_HOME" || ! -d "$TARGET_HOME" ]]; then
-    die "Could not determine home directory for user '$TARGET_USER'."
-  fi
-
-  WHEEL_CACHE="${TARGET_HOME}/.cache/pytorch_wheels"
 }
 
 assert_system_python_compatibility() {
@@ -159,18 +131,6 @@ PYCODE
   log_info "Using system python3 ${py_version}."
 }
 
-download_if_missing() {
-  local -r filepath="$1"
-  local -r url="$2"
-
-  if run_as_target test -s "$filepath"; then
-    return
-  fi
-
-  run_as_target wget "$url" -O "$filepath"
-  run_as_target test -s "$filepath" || die "Downloaded wheel is missing or empty: $filepath"
-}
-
 install_system_packages() {
   log_info "Updating system packages..."
   apt-get update
@@ -184,40 +144,35 @@ install_system_packages() {
 }
 
 install_cuda_dependencies() {
-  log_info "Installing cuSPARSELt (required by torch 2.5.0)..."
+  log_info "Installing cuSPARSELt dependency for Jetson PyTorch packages..."
   wget "$CUDA_KEYRING_URL" -O "$CUDA_KEYRING_DEB_PATH"
   dpkg -i "$CUDA_KEYRING_DEB_PATH"
   apt-get update
   apt-get install -y libcusparselt0 libcusparselt-dev
 }
 
-prepare_wheels() {
-  run_pip uninstall -y torch torchvision || true
-  run_as_target mkdir -p "$WHEEL_CACHE"
-  run_as_target test -d "$WHEEL_CACHE" || die "Could not create wheel cache directory: $WHEEL_CACHE"
-
-  if [[ "$CLEAN_CACHE" == true ]]; then
-    log_info "Cleaning wheel cache..."
-    run_as_target find "$WHEEL_CACHE" -maxdepth 1 -type f -name '*.whl' -delete
-  fi
-
-  log_info "Downloading missing wheels (if any)..."
-  download_if_missing "$WHEEL_CACHE/$TORCH_WHL" "$TORCH_URL"
-  download_if_missing "$WHEEL_CACHE/$TORCHVISION_WHL" "$TORCHVISION_URL"
-}
-
 install_python_packages() {
+  local -a index_args=(--index-url "$JETSON_AI_LAB_INDEX_URL")
+
   log_info "Upgrading pip..."
   run_pip install --upgrade pip
 
-  log_info "Installing ONNX Runtime GPU 1.23.0..."
-  run_pip install "$ONNXRUNTIME_GPU_WHL_URL"
+  log_info "Removing existing Jetson ML packages..."
+  run_pip uninstall -y onnxruntime-gpu torch torchvision || true
 
-  log_info "Installing PyTorch and TorchVision..."
+  log_info "Installing ONNX Runtime GPU ${ONNXRUNTIME_GPU_VERSION} from Jetson AI Lab..."
   run_pip install --force-reinstall \
-    "$WHEEL_CACHE/$TORCH_WHL" \
-    "$WHEEL_CACHE/$TORCHVISION_WHL" \
-    "numpy<2.0"
+    "${index_args[@]}" \
+    "onnxruntime-gpu==${ONNXRUNTIME_GPU_VERSION}"
+
+  log_info "Installing NumPy < 2.0..."
+  run_pip install --force-reinstall "numpy<2.0"
+
+  log_info "Installing PyTorch ${TORCH_VERSION} and TorchVision ${TORCHVISION_VERSION} from Jetson AI Lab..."
+  run_pip install --force-reinstall \
+    "${index_args[@]}" \
+    "torch==${TORCH_VERSION}" \
+    "torchvision==${TORCHVISION_VERSION}"
 }
 
 verify_install() {
@@ -257,13 +212,12 @@ PYCODE
 setup_environment() {
   require_root
   setup_traps
-  require_cmds apt-get cut dpkg find getent mktemp python3 sudo wget
+  require_cmds apt-get dpkg mktemp python3 wget
   TMP_DIR="$(mktemp -d)"
   CUDA_KEYRING_DEB_PATH="${TMP_DIR}/${CUDA_KEYRING_DEB}"
-  configure_target_context
 
   log_info "Installing PyTorch for Jetson Orin Nano"
-  log_info "Target user: ${TARGET_USER}"
+  log_info "Installing from package index: ${JETSON_AI_LAB_INDEX_URL}"
 }
 
 final_checks() {
@@ -278,7 +232,6 @@ main() {
   install_system_packages
   assert_system_python_compatibility
   install_cuda_dependencies
-  prepare_wheels
   install_python_packages
   final_checks
 }

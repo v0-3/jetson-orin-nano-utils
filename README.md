@@ -10,10 +10,10 @@ Installs a Jetson-compatible PyTorch stack with CUDA dependencies.
 What it does:
 - Requires `sudo` (must be run from a non-root user via `sudo`)
 - Uses system `python3` and installs required Python packages globally
-- Installs cuSPARSELt (`libcusparselt0`, `libcusparselt-dev`) for Torch 2.5.0 dependency support
-- Downloads cached wheel files for `torch` and `torchvision`
-- Installs `onnxruntime-gpu 1.23.0` (Python 3.10, ARM64 wheel)
-- Installs `torch`, `torchvision`, and `numpy<2.0`
+- Installs cuSPARSELt (`libcusparselt0`, `libcusparselt-dev`) required by the Jetson PyTorch packages
+- Installs `onnxruntime-gpu==1.23.0`, `torch==2.10.0`, and `torchvision==0.25.0`
+- Sources those three packages from the Jetson AI Lab index: `https://pypi.jetson-ai-lab.io/jp6/cu126`
+- Installs `numpy<2.0`
 - Verifies CUDA availability from Python
 
 Usage:
@@ -23,15 +23,13 @@ sudo bash install-pytorch.sh
 
 Options:
 ```bash
-sudo bash install-pytorch.sh --clean-cache
 sudo bash install-pytorch.sh --help
 ```
 
 Notes:
 - System `python3` must be version `3.10` (required by `cp310` wheels)
 - No `pyenv` or virtual environment is used
-- `--venv` is not supported and returns a usage error
-- Wheel cache directory: `<sudo-user-home>/.cache/pytorch_wheels`
+- `--clean-cache` is no longer supported
 
 ### `install-vscode.sh`
 Downloads and installs the latest stable ARM64 `.deb` build of Visual Studio Code.
