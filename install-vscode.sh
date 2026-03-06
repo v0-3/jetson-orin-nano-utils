@@ -114,10 +114,10 @@ setup_traps() {
 
 install_dependencies() {
   log_info "Updating package lists..."
-  apt-get update
+  apt update
 
   log_info "Installing required dependencies..."
-  apt-get install -y wget apt-transport-https
+  apt install -y wget apt-transport-https
 }
 
 download_vscode() {
@@ -138,7 +138,7 @@ install_vscode() {
   log_info "Installing Visual Studio Code..."
   if ! dpkg -i "$DEB_FILE"; then
     log_warn "Fixing missing dependencies..."
-    apt-get install -f -y
+    apt install -f -y
   fi
 }
 
@@ -166,7 +166,7 @@ main() {
   parse_args "$@"
   require_root
   setup_traps
-  require_cmds apt-get dpkg dpkg-query mktemp sudo wget
+  require_cmds apt dpkg dpkg-query mktemp sudo wget
 
   TARGET_USER="$SUDO_USER"
   log_info "Target user: $TARGET_USER"

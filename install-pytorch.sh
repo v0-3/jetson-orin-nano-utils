@@ -141,8 +141,8 @@ PYCODE
 
 install_system_packages() {
   log_info "Updating system packages..."
-  apt-get update
-  apt-get install -y \
+  apt update
+  apt install -y \
     build-essential \
     ca-certificates \
     libopenblas-dev \
@@ -155,8 +155,8 @@ install_cuda_dependencies() {
   log_info "Installing cuSPARSELt and cuDSS dependencies for Jetson PyTorch packages..."
   wget "$CUDA_KEYRING_URL" -O "$CUDA_KEYRING_DEB_PATH"
   dpkg -i "$CUDA_KEYRING_DEB_PATH"
-  apt-get update
-  apt-get install -y \
+  apt update
+  apt install -y \
     libcudss0-cuda-12 \
     libcusparselt0 \
     libcusparselt-dev
@@ -231,7 +231,7 @@ PYCODE
 setup_environment() {
   require_root
   setup_traps
-  require_cmds apt-get dpkg ldconfig ln mktemp python3 wget
+  require_cmds apt dpkg ldconfig ln mktemp python3 wget
   TMP_DIR="$(mktemp -d)"
   CUDA_KEYRING_DEB_PATH="${TMP_DIR}/${CUDA_KEYRING_DEB}"
 
