@@ -151,6 +151,17 @@ main() {
   validate_revision
   require_root
   setup_traps
+  require_cmds sudo apt apt-mark
+
+  log_info "Purging snapd package..."
+  sudo apt purge --autoremove snapd
+
+  log_info "Installing snapd package version 2.63+22.04ubuntu0.1..."
+  sudo apt install snapd=2.63+22.04ubuntu0.1
+
+  log_info "Holding snapd package..."
+  sudo apt-mark hold snapd
+
   require_cmds snap
 
   prepare_files

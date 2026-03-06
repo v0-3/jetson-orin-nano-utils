@@ -48,7 +48,7 @@ sudo bash install-vscode.sh --help
 ```
 
 ### `revert-snap.sh`
-Downloads and reinstalls a specific `snapd` revision, then places it on hold.
+Purges `snapd`, reinstalls a pinned `snapd` apt package, installs a specific `snapd` snap revision, and places it on hold.
 
 Usage:
 ```bash
@@ -63,6 +63,9 @@ sudo bash revert-snap.sh --help
 ```
 
 What it does:
+- `sudo apt purge --autoremove snapd`
+- `sudo apt install snapd=2.63+22.04ubuntu0.1`
+- `sudo apt-mark hold snapd`
 - `snap download snapd --revision=<REVISION>`
 - `snap ack ...`
 - `snap install ...`
